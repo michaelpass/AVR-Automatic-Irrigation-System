@@ -8,6 +8,9 @@
 #define MENUBUTTON 9
 #define RIGHTBUTTON 10
 #define VALVE 7
+#define WATERLEVEL A0
+#define WATERLED 6
+#define BUZZER 13
 
 RTClib myRTC;
 
@@ -20,11 +23,13 @@ uint16_t threshold = 500;
 
 int menuPage = 0;
 unsigned long previousUpdate = 0;
+unsigned long previousWaterLow = 0;
 unsigned char mode = 0;
 unsigned char timeIntervalCounter = 0;
 unsigned long nextWaterTime = 0;
 unsigned long lastWatering = 0;
 unsigned char numReadsBelowThresh = 0;
+bool isInMenu = false;
 
 void storeSettings(){
   unsigned char lastMode;
@@ -39,6 +44,43 @@ void storeSettings(){
   EEPROM.get(3, lastInterval);
   if(lastInterval != timeIntervalCounter) EEPROM.put(3, timeIntervalCounter);
 
+}
+
+void printLowWaterLevel(){
+
+  if((millis() - previousWaterLow) > 1000){
+
+    previousWaterLow = millis();
+
+    lcd.setCursor(0, 0);
+
+    lcd.print("Water Level Low ");
+
+    lcd.setCursor(0, 1);
+
+    lcd.print("Replace Water!  ");
+
+  }
+
+}
+
+void checkWaterLevel(){
+
+  // Check water level
+  int waterLevel = analogRead(WATERLEVEL);
+  if(waterLevel > 5){
+    if(!isInMenu) printLowWaterLevel(); // Printing while in menu causes display problems, because menu doesn't update every second like other screens.
+    digitalWrite(WATERLED, HIGH); // No water
+    tone(BUZZER, 1000);
+    delay(500);
+    digitalWrite(WATERLED, LOW);
+    noTone(BUZZER);
+    delay(500);
+
+  } else{
+    digitalWrite(WATERLED, LOW); // Water present
+    noTone(BUZZER);
+  }
 }
 
 void restoreSettings(){
@@ -159,7 +201,7 @@ void printLastWatering(){
   lcd.setCursor(0, 0);
 
   if(lastMonth == 0xff || lastDay == 0xff || lastYear == 0xffff || lastHour == 0xff || lastMinute == 0xff || lastSecond == 0xff){
-    lcd.print("Never Watered");
+    lcd.print("Never Watered   ");
   } else{
 
     if(lastMonth < 10) lcd.print('0'); // Date formats should have at least 2 digits. Print leading zero if less than 10.
@@ -179,7 +221,7 @@ void printLastWatering(){
     lcd.print(':');
     if(lastSecond < 10) lcd.print('0');
     lcd.print(lastSecond);
-    lcd.print("  (Last)");
+    lcd.print("  (Last)   ");
   }
 }
 
@@ -201,6 +243,7 @@ void printMoisture() {
     lcd.setCursor(0, 1);
     lcd.print("Threshold: ");
     lcd.print(threshold);
+    lcd.print("      ");
   }
 }
 
@@ -217,10 +260,10 @@ void printMoistureOff() {
     lcd.print("Moisture: ");
 
     lcd.print(capread, DEC);
-    lcd.print("   ");
+    lcd.print("      ");
 
     lcd.setCursor(0, 1);
-    lcd.print("Watering Off");
+    lcd.print("Watering Off    ");
   }
 }
 
@@ -236,12 +279,12 @@ void printMoistureAndTime(){
     lcd.print("Moisture: ");
 
     lcd.print(capread, DEC);
-    lcd.print("   ");
+    lcd.print("      ");
 
     lcd.setCursor(0, 1);
     lcd.print("Next: ");
     lcd.print(millisToString(nextWaterTime - millis())); // Print time remaining until next watering.
-    lcd.print("   ");
+    lcd.print("       ");
     }
 }
 
@@ -263,7 +306,7 @@ void printTimeAndDate() {
     lcd.print(now.day(), DEC);
     lcd.print('/');
     lcd.print(now.year(), DEC);
-    lcd.print("   ");
+    lcd.print("       ");
 
     // Print time
     lcd.setCursor(0, 1);
@@ -275,7 +318,7 @@ void printTimeAndDate() {
     lcd.print(':');
     if (now.second() < 10) lcd.print('0');
     lcd.print(now.second(), DEC);
-    lcd.print("   ");
+    lcd.print("       ");
   }
 }
 
@@ -362,6 +405,9 @@ void setup() {
   pinMode(MENUBUTTON, INPUT);
   pinMode(RIGHTBUTTON, INPUT);
   pinMode(VALVE, OUTPUT);
+  pinMode(WATERLEVEL, INPUT);
+  pinMode(WATERLED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
 
   restoreSettings(); // Restore previous settings from EEPROM
 
@@ -398,6 +444,8 @@ void loop() {
         } else if (mode == 2){
           printMoistureOff();
         }
+
+        checkWaterLevel();
       }
 
       menuPage = -1; // Go to RTC screen
@@ -416,6 +464,8 @@ void loop() {
         } else if (mode == 2){
           printMoistureOff();
         }
+
+        checkWaterLevel();
       }
 
       menuPage = 1;
@@ -432,6 +482,7 @@ void loop() {
       while (rightButton == HIGH) {
         rightButton = digitalRead(RIGHTBUTTON);
         printTimeAndDate();
+        checkWaterLevel();
       }
 
       menuPage = 0; // Return to main screen
@@ -446,6 +497,8 @@ void loop() {
       // Wait for button release
       while(leftButton == HIGH){
         leftButton = digitalRead(LEFTBUTTON); // Since last watering is static, we do not need to print new information while waiting on button release.
+        printLastWatering();
+        checkWaterLevel();
       }
 
       menuPage = 0;
@@ -461,9 +514,13 @@ void loop() {
 
   // Menu should be accessible everywhere
   if (menuButton == HIGH) {
+
+    isInMenu = true;
+
     // Wait for button release
     while (menuButton == HIGH) {
       menuButton = digitalRead(MENUBUTTON);
+      checkWaterLevel();
     }
 
     lcd.clear();
@@ -484,6 +541,8 @@ void loop() {
       leftButton = digitalRead(LEFTBUTTON);
       menuButton = digitalRead(MENUBUTTON);
       rightButton = digitalRead(RIGHTBUTTON);
+
+      checkWaterLevel();
 
       if(leftButton == HIGH){ // Since there are only two options at the moment, button direction doesn't matter.
         // Wait for button release
@@ -516,6 +575,7 @@ void loop() {
         // Wait for button release
         while(rightButton == HIGH){ // Wait for both buttons to be released
           rightButton = digitalRead(RIGHTBUTTON);
+          checkWaterLevel();
         }
 
         if(mode == 0){
@@ -544,6 +604,7 @@ void loop() {
         // Wait for button release
         while(menuButton == HIGH){
           menuButton = digitalRead(MENUBUTTON);
+          checkWaterLevel();
         }
 
         lcd.clear();
@@ -559,6 +620,8 @@ void loop() {
             menuButton = digitalRead(MENUBUTTON);
             rightButton = digitalRead(RIGHTBUTTON);
 
+            checkWaterLevel();
+
             if(leftButton == HIGH){
               // Wait for button release
               while(leftButton == HIGH){
@@ -572,6 +635,7 @@ void loop() {
               // Wait for button release
               while(rightButton == HIGH){
                 rightButton = digitalRead(RIGHTBUTTON);
+                checkWaterLevel();
               }
 
               if(threshold <= 990) threshold += 10;
@@ -585,6 +649,7 @@ void loop() {
               // Wait for button release
               while(menuButton == HIGH){
                 menuButton = digitalRead(MENUBUTTON);
+                checkWaterLevel();
               }
               selectionMade = true; // Selection made. Can now exit menu and return to main display.
               storeSettings(); // Store current settings in the EEPROM in lowest bytes.
@@ -605,10 +670,13 @@ void loop() {
             menuButton = digitalRead(MENUBUTTON);
             rightButton = digitalRead(RIGHTBUTTON);
 
+            checkWaterLevel();
+
             if(leftButton == HIGH){
               // Wait for button release
               while(leftButton == HIGH){
                 leftButton = digitalRead(LEFTBUTTON);
+                checkWaterLevel();
               }
               if(timeIntervalCounter > 0) timeIntervalCounter--;
               clearSecondLine();
@@ -619,6 +687,7 @@ void loop() {
               // Wait for button release
               while(rightButton == HIGH){
                 rightButton = digitalRead(RIGHTBUTTON);
+                checkWaterLevel();
               }
               if(timeIntervalCounter < 7) timeIntervalCounter++;
               clearSecondLine();
@@ -629,6 +698,7 @@ void loop() {
               // Wait for button release
               while(menuButton == HIGH){
                 menuButton = digitalRead(MENUBUTTON);
+                checkWaterLevel();
               }
               selectionMade = true;
               storeSettings(); // Store current settings in EEPROM.
@@ -643,6 +713,8 @@ void loop() {
         }
       }
     }
+
+    isInMenu = false;
   }
 
   // Check for watering condition
@@ -661,7 +733,7 @@ void loop() {
     }// At least 100 consecutive reads of below threshold moisture have occured.
     // Note: We use this to avoid errant one-off readings to ensure that sensor is indeed below threshold. 
 
-  }else if (mode == 1){ // Mode is timer
+  } else if (mode == 1){ // Mode is timer
     if(millis() > nextWaterTime) {
       if(waterPlant()) logWatering(); 
     } // Time has exceeded water time. Time to water plant.
@@ -670,6 +742,7 @@ void loop() {
     // Do nothing if Off.
   }
 
+  checkWaterLevel();
 
 }
 
