@@ -346,6 +346,8 @@ void setup() {
   pinMode(VALVE, OUTPUT);
 
   restoreSettings(); // Restore previous settings from EEPROM
+
+  nextWaterTime = millis() + timeIntervalToMillis(); // If restarted in timer mode, we reset the watering timer. This line prevents integer underflow when calculating times.
 }
 
 void loop() {
