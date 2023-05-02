@@ -445,7 +445,11 @@ void loop() {
     lcd.clear();
     lcd.print("Select Mode:");
     lcd.setCursor(0, 1);
-    lcd.print("Automatic");
+    if(modeIsAutomatic){
+      lcd.print("Automatic");
+    } else {
+        lcd.print("Timer");
+      }
 
     bool selectionMade = false;
 
