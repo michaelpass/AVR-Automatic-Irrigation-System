@@ -20,16 +20,16 @@ uint16_t threshold = 500;
 
 int menuPage = 0;
 unsigned long previousUpdate = 0;
-bool modeIsAutomatic = true;
+unsigned char mode = 0;
 unsigned char timeIntervalCounter = 0;
 unsigned long nextWaterTime = 0;
 unsigned long lastWatering = 0;
 unsigned char numReadsBelowThresh = 0;
 
 void storeSettings(){
-  bool lastMode;
+  unsigned char lastMode;
   EEPROM.get(0, lastMode); // Get the previous
-  if(lastMode != modeIsAutomatic) EEPROM.put(0, modeIsAutomatic); // Only store if different
+  if(lastMode != mode) EEPROM.put(0, mode); // Only store if different
 
   uint16_t lastThresh;
   EEPROM.get(1, lastThresh);
@@ -44,11 +44,9 @@ void storeSettings(){
 void restoreSettings(){
 
 // It's possible when first starting up Arduino that EEPROM values haven't been written to. They default to 0xff per byte.
-  bool lastMode;
-  char testWrite;
+  unsigned char lastMode;
   EEPROM.get(0, lastMode); // Get the previous
-  EEPROM.get(0, testWrite); // Need to check full byte to see if value never written to.
-  if(testWrite != 0xff) modeIsAutomatic = lastMode;
+  if(lastMode != 0xff) mode = lastMode;
 
   uint16_t lastThresh;
   EEPROM.get(1, lastThresh);
@@ -206,6 +204,26 @@ void printMoisture() {
   }
 }
 
+void printMoistureOff() {
+
+  if (millis() - previousUpdate > 1000) {
+
+    previousUpdate = millis();
+
+    uint16_t capread = ss.touchRead(0);
+
+    lcd.setCursor(0, 0);
+    lcd.setCursor(0, 0);
+    lcd.print("Moisture: ");
+
+    lcd.print(capread, DEC);
+    lcd.print("   ");
+
+    lcd.setCursor(0, 1);
+    lcd.print("Watering Off");
+  }
+}
+
 void printMoistureAndTime(){
   if (millis() - previousUpdate > 1000) {
 
@@ -221,7 +239,7 @@ void printMoistureAndTime(){
     lcd.print("   ");
 
     lcd.setCursor(0, 1);
-    lcd.print("Next : ");
+    lcd.print("Next: ");
     lcd.print(millisToString(nextWaterTime - millis())); // Print time remaining until next watering.
     lcd.print("   ");
     }
@@ -361,20 +379,24 @@ void loop() {
 
   if (menuPage == 0) {
 
-    if(modeIsAutomatic){
+    if(mode == 0){
       printMoisture();
-    } else {
+    } else if (mode == 1) {
       printMoistureAndTime();
-    }   
+    } else if (mode == 2){
+      printMoistureOff();
+    }  
 
     if (leftButton == HIGH) {
       // Wait for button release
       while (leftButton == HIGH) {
         leftButton = digitalRead(LEFTBUTTON);
-        if(modeIsAutomatic){
+        if(mode == 0){
           printMoisture();
-        } else{
+        } else if (mode == 1){
           printMoistureAndTime();
+        } else if (mode == 2){
+          printMoistureOff();
         }
       }
 
@@ -387,10 +409,12 @@ void loop() {
       // Wait for button release
       while (rightButton == HIGH){
         rightButton = digitalRead(RIGHTBUTTON);
-        if(modeIsAutomatic){
+        if(mode == 0){
           printMoisture();
-        } else{
+        } else if (mode == 1){
           printMoistureAndTime();
+        } else if (mode == 2){
+          printMoistureOff();
         }
       }
 
@@ -445,11 +469,13 @@ void loop() {
     lcd.clear();
     lcd.print("Select Mode:");
     lcd.setCursor(0, 1);
-    if(modeIsAutomatic){
+    if(mode == 0){
       lcd.print("Automatic");
-    } else {
+    } else if (mode == 1){
         lcd.print("Timer");
-      }
+    } else if (mode == 2){
+        lcd.print("Off");
+    }
 
     bool selectionMade = false;
 
@@ -459,29 +485,60 @@ void loop() {
       menuButton = digitalRead(MENUBUTTON);
       rightButton = digitalRead(RIGHTBUTTON);
 
-      if(leftButton == HIGH || rightButton == HIGH){ // Since there are only two options at the moment, button direction doesn't matter.
+      if(leftButton == HIGH){ // Since there are only two options at the moment, button direction doesn't matter.
         // Wait for button release
-        while(leftButton == HIGH || rightButton == HIGH){ // Wait for both buttons to be released
+        while(leftButton == HIGH){ // Wait for both buttons to be released
           leftButton = digitalRead(LEFTBUTTON);
-          rightButton = digitalRead(RIGHTBUTTON);
         }
 
-        if(modeIsAutomatic){
-          modeIsAutomatic = false;
-        } else{
-          modeIsAutomatic = true;
+        if(mode == 0){
+          mode = 2;
+        } else if (mode == 1){
+          mode = 0;
+        } else if (mode == 2){
+          mode = 1;
         }
 
         lcd.setCursor(0,1);
         lcd.print("                "); // Clear line
         lcd.setCursor(0,1);
-        if(modeIsAutomatic){
+        if(mode == 0){
           lcd.print("Automatic");
-        } else {
+        } else if (mode == 1){
           lcd.print("Timer");
+        } else if (mode == 2){
+          lcd.print("Off");
         }
 
       }
+
+      if(rightButton == HIGH){ // Since there are only two options at the moment, button direction doesn't matter.
+        // Wait for button release
+        while(rightButton == HIGH){ // Wait for both buttons to be released
+          rightButton = digitalRead(RIGHTBUTTON);
+        }
+
+        if(mode == 0){
+          mode = 1;
+        } else if (mode == 1){
+          mode = 2;
+        } else if (mode == 2){
+          mode = 0;
+        }
+
+        lcd.setCursor(0,1);
+        lcd.print("                "); // Clear line
+        lcd.setCursor(0,1);
+        if(mode == 0){
+          lcd.print("Automatic");
+        } else if (mode == 1){
+          lcd.print("Timer");
+        } else if (mode == 2){
+          lcd.print("Off");
+        }
+
+      }
+      
 
       if(menuButton == HIGH){
         // Wait for button release
@@ -491,7 +548,7 @@ void loop() {
 
         lcd.clear();
 
-        if(modeIsAutomatic){
+        if(mode == 0){ // Automatic mode chosen
           lcd.print("Threshold:");
           lcd.setCursor(0, 1);
           lcd.print(threshold);
@@ -538,7 +595,7 @@ void loop() {
 
           }
 
-        } else{
+        } else if (mode == 1){
           // Timer mode chosen
           lcd.print("Time Interval:");
           printTimeInterval();
@@ -579,13 +636,17 @@ void loop() {
               lcd.clear();
             }
           }
+        } else if (mode == 2){ // User has selected Off.
+          selectionMade = true;
+          storeSettings();
+          lcd.clear();
         }
       }
     }
   }
 
   // Check for watering condition
-  if(modeIsAutomatic){
+  if(mode == 0){
 
     uint16_t capread = ss.touchRead(0); // Get soil moisture
     
@@ -600,11 +661,15 @@ void loop() {
     }// At least 100 consecutive reads of below threshold moisture have occured.
     // Note: We use this to avoid errant one-off readings to ensure that sensor is indeed below threshold. 
 
-  }else { // Mode is timer
+  }else if (mode == 1){ // Mode is timer
     if(millis() > nextWaterTime) {
       if(waterPlant()) logWatering(); 
     } // Time has exceeded water time. Time to water plant.
+  } else {
+    // Mode is Off
+    // Do nothing if Off.
   }
+
 
 }
 
